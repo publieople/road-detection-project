@@ -1,0 +1,12 @@
+[project]
+name = "road-detection-project"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "gradio>=6.0.1",
+    "numpy>=2.3.5",
+    "opencv-python>=4.11.0.86",
+    "ultralytics>=8.3.233",
+]
