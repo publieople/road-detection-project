@@ -1,12 +1,48 @@
 [project]
 name = "road-detection-project"
 version = "0.1.0"
-description = "Add your description here"
+description = "道路病害检测系统 - RTX 5060 Ti优化配置"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12, <3.13"
 dependencies = [
-    "gradio>=6.0.1",
-    "numpy>=2.3.5",
-    "opencv-python>=4.11.0.86",
-    "ultralytics>=8.3.233",
+    # PyTorch 2.6.0+ 支持RTX 50系列 (sm_120)
+    "torch>=2.6.0",
+    "torchvision>=0.21.0",
+    "torchaudio>=2.6.0",
+    # 核心依赖
+    "ultralytics>=8.3.234",
+    "matplotlib>=3.10.0",
+    "numpy>=2.0.0",
+    "opencv-python>=4.10.0",
+    "pandas>=2.2.0",
+    "pillow>=11.0.0",
+    "pyyaml>=6.0.0",
+    "seaborn>=0.13.0",
+    "tqdm>=4.67.0",
+    # 训练监控
+    "tensorboard>=2.18.0",
+    "gputil>=1.4.0",
+    "scikit-learn>=1.7.2",
+]
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
+
+# 修复：CUDA 12.8索引源
+[[tool.uv.index]]
+name = "pytorch-cu128"  # 改名为cu128
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128" }]
+torchvision = [{ index = "pytorch-cu128" }]
+torchaudio = [{ index = "pytorch-cu128" }]
+
+# 开发额外依赖（可选）
+[dependency-groups]
+dev = [
+    "jupyterlab>=4.0.0",
+    "ipywidgets>=8.0.0",
 ]
