@@ -5,13 +5,13 @@ from typing import Dict, List, Tuple
 
 # ==================== 配置区域（按需修改） ====================
 # CRACK500数据集路径
-CRACK500_ROOT = Path("E:/ToDo/ShandaCup/road-detection-project/datasets/CRACK500")
+CRACK500_ROOT = Path("./datasets/CRACK500")
 
 # RDD2020数据集路径
-RDD2020_ROOT = Path("E:/ToDo/ShandaCup/road-detection-project/datasets/RDD2020")
+RDD2020_ROOT = Path("./datasets/RDD2020")
 
 # YOLO格式输出路径
-YOLO_ROOT = Path("E:/ToDo/ShandaCup/road-detection-project/datasets/yolo_format")
+YOLO_ROOT = Path("./datasets/yolo_format")
 
 # RDD2020的类别映射（完整类别支持）
 RDD_CLASSES = {

@@ -3,7 +3,7 @@ import random
 import shutil
 
 # 配置路径
-YOLO_ROOT = Path("E:/ToDo/ShandaCup/road-detection-project/datasets/yolo_format")
+YOLO_ROOT = Path("./datasets/yolo_format")
 TRAIN_RATIO = 0.85  # 85%训练，15%验证
 
 def split_dataset():

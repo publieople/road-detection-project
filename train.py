@@ -13,57 +13,130 @@ import os
 def get_dataset_stats(data_yaml_path: str) -> dict:
     """从数据配置文件中获取统计信息"""
     try:
+        print(f"📊 正在分析数据集配置: {data_yaml_path}")
+        
         with open(data_yaml_path, 'r', encoding='utf-8') as f:
             data_config = yaml.safe_load(f)
 
         # 获取类别信息
         nc = data_config.get('nc', 0)
         names = data_config.get('names', [])
+        
+        print(f"🎯 类别数量: {nc}")
+        print(f"🏷️  类别名称: {names}")
+
+        # 获取基础路径 - 直接使用YAML文件所在目录作为基础路径
+        yaml_dir = Path(data_yaml_path).parent
+        base_path = yaml_dir
+        
+        print(f"📂 YAML文件所在目录: {base_path}")
 
         # 计算训练和验证图片数量
-        def count_images_in_path(path_pattern):
-            """计算指定路径模式下的图片数量"""
-            if isinstance(path_pattern, list):
-                # 如果是列表，处理多个路径
-                total_count = 0
-                for pattern in path_pattern:
-                    path = Path(pattern)
-                    if path.exists():
-                        if path.is_dir():
-                            total_count += len(list(path.rglob('*.jpg')) + list(path.rglob('*.png')) +
-                                             list(path.rglob('*.jpeg')) + list(path.rglob('*.JPG')))
-                        else:
-                            # 如果是文件，可能是包含图片路径的txt文件
-                            with open(path, 'r') as f:
-                                total_count += len([line for line in f.readlines() if line.strip()])
-                return total_count
+        def count_images_and_labels(train_val_path):
+            """计算指定路径下的图片和标签数量"""
+            if not train_val_path:
+                return 0, 0
+                
+            # 构建完整的图片路径
+            image_path = base_path / train_val_path
+            
+            print(f"\n🔍 检查路径: {image_path}")
+            
+            if not image_path.exists():
+                print(f"❌ 路径不存在: {image_path}")
+                return 0, 0
+            
+            # 统计图片文件
+            image_extensions = ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG']
+            image_files = []
+            for ext in image_extensions:
+                image_files.extend(list(image_path.rglob(ext)))
+            
+            total_images = len(image_files)
+            print(f"📸 找到图片文件: {total_images} 张")
+            
+            # 检查对应的标签路径
+            label_path = Path(str(image_path).replace('images', 'labels'))
+            print(f"🏷️  标签路径: {label_path}")
+            
+            if label_path.exists():
+                # 统计标签文件
+                label_files = list(label_path.rglob('*.txt'))
+                total_labels = len(label_files)
+                print(f"📝 找到标签文件: {total_labels} 个")
+                
+                # 检查匹配情况
+                if total_images > 0:
+                    match_ratio = (total_labels / total_images) * 100
+                    print(f"✅ 图片-标签匹配率: {match_ratio:.1f}%")
+                    
+                    if match_ratio < 100:
+                        print(f"⚠️  警告: {total_images - total_labels} 张图片缺少标签文件")
+                        
+                        # 列出前10个没有标签的图片
+                        missing_labels = []
+                        for img_file in image_files[:10]:  # 只检查前10个
+                            expected_label = label_path / (img_file.stem + '.txt')
+                            if not expected_label.exists():
+                                missing_labels.append(img_file.name)
+                        
+                        if missing_labels:
+                            print(f"   缺失标签的图片示例: {missing_labels[:5]}")
             else:
-                # 单个路径
-                path = Path(path_pattern)
-                if path.exists():
-                    if path.is_dir():
-                        return len(list(path.rglob('*.jpg')) + list(path.rglob('*.png')) +
-                                 list(path.rglob('*.jpeg')) + list(path.rglob('*.JPG')))
-                    else:
-                        # 如果是文件，可能是包含图片路径的txt文件
-                        with open(path, 'r') as f:
-                            return len([line for line in f.readlines() if line.strip()])
-                return 0
+                print(f"❌ 标签目录不存在: {label_path}")
+                total_labels = 0
+            
+            return total_images, total_labels
 
-        train_count = count_images_in_path(data_config.get('train', ''))
-        val_count = count_images_in_path(data_config.get('val', ''))
-
+        # 统计训练集
+        train_path = data_config.get('train', 'images/train')
+        train_images, train_labels = count_images_and_labels(train_path)
+        
+        # 统计验证集
+        val_path = data_config.get('val', 'images/val')
+        val_images, val_labels = count_images_and_labels(val_path)
+        
+        # 总计
+        total_images = train_images + val_images
+        total_labels = train_labels + val_labels
+        
+        print(f"\n📋 数据集统计总结:")
+        print("=" * 60)
+        print(f"🚀 训练集: {train_images} 张图片, {train_labels} 个标签")
+        print(f"🔍 验证集: {val_images} 张图片, {val_labels} 个标签")
+        print(f"📊 总计: {total_images} 张图片, {total_labels} 个标签")
+        
+        # YOLO训练时的实际使用数量（有标签的图片）
+        usable_train = min(train_images, train_labels)
+        usable_val = min(val_images, val_labels)
+        usable_total = usable_train + usable_val
+        
+        print(f"\n🎯 YOLO训练实际可用:")
+        print(f"   训练集: {usable_train} 张图片")
+        print(f"   验证集: {usable_val} 张图片")
+        print(f"   总计: {usable_total} 张图片")
+        
+        if usable_total < total_images:
+            print(f"⚠️  警告: 由于缺少标签文件，YOLO将只使用 {usable_total}/{total_images} 张图片")
+        
         return {
-            'train_count': train_count,
-            'val_count': val_count,
+            'train_count': usable_train,  # 实际可用的训练图片数量
+            'val_count': usable_val,      # 实际可用的验证图片数量
+            'total_images': total_images, # 总图片数量
+            'total_labels': total_labels, # 总标签数量
             'num_classes': nc,
             'class_names': names
         }
+        
     except Exception as e:
         print(f"⚠️  获取数据集统计信息失败: {e}")
+        import traceback
+        traceback.print_exc()
         return {
             'train_count': 0,
             'val_count': 0,
+            'total_images': 0,
+            'total_labels': 0,
             'num_classes': 0,
             'class_names': []
         }
@@ -135,35 +208,39 @@ def train_model(data_yaml_path: str, model_size: str = 'n', epochs: int = 100, i
         'data': data_yaml_path,
         'epochs': epochs,
         'imgsz': img_size,
-        'batch': 16,                              # 批次大小，可根据GPU内存调整
+        'batch': 16,                             # 批次大小，可根据GPU内存调整
         'workers': 4,                            # 数据加载线程数
         'cache': False,                          # 是否缓存数据集
 
         'device': device,
-        'optimizer': 'AdamW',
+        'optimizer': 'SGD',
         'lr0': 0.001,                            # 初始学习率
-        'lrf': 0.01,                             # 最终学习率倍数
-        'momentum': 0.937,
+        'lrf': 0.1,                              # 最终学习率倍数
+        'momentum': 0.9,
         'weight_decay': 0.0005,
-        'warmup_epochs': 10,                     # 预热轮数
+        'warmup_epochs': 5,                      # 预热轮数
         'warmup_momentum': 0.8,
         'box': 7.5,                              # box loss增益
         'cls': 0.5,                              # cls loss增益
         'dfl': 1.5,                              # dfl loss增益
 
+        # 颜色增强
         'hsv_h': 0.015,                          # HSV色调增强
         'hsv_s': 0.7,                            # HSV饱和度增强
         'hsv_v': 0.4,                            # HSV明度增强
-        'degrees': 5.0,                          # 旋转增强
+
+        # 几何增强
+        'degrees': 10.0,                         # 旋转增强
         'scale': 0.7,                            # 缩放增强
         'shear': 0.0,                            # 剪切增强
+        'translate': 0.2,                        # 平移增强
         'perspective': 0.0005,                   # 透视增强
         'fliplr': 0.8,                           # 左右翻转
         'flipud': 0.3,                           # 上下翻转
-        'translate': 0.2,                        # 平移增强
+
         'mosaic': 0.8,                           # mosaic增强
-        'mixup': 0.3,                            # mixup增强
-        'copy_paste': 0.2,                       # 复制粘贴增强
+        'mixup': 0.5,                            # mixup增强
+        'copy_paste': 0.3,                       # 复制粘贴增强
         'auto_augment': 'rand-m9-mstd0.5-inc1',  # 自动增强策略
         'erasing': 0.6,                          # 随机擦除
 
@@ -224,7 +301,7 @@ def main():
     parser.add_argument('--resume', action='store_true', help='从上次中断处恢复训练')
     parser.add_argument('--data', type=str, default='datasets/yolo_format/road.yaml', help='数据配置文件路径')
     parser.add_argument('--model-size', type=str, default='n', choices=['n', 's', 'm', 'l', 'x'], help='模型大小')
-    parser.add_argument('--epochs', type=int, default=50, help='训练轮数')
+    parser.add_argument('--epochs', type=int, default=150, help='训练轮数')
     parser.add_argument('--img-size', type=int, default=640, help='输入图像尺寸')
 
     args = parser.parse_args()
@@ -246,6 +323,9 @@ def main():
     print(f"📊 配置: 模型={args.model_size}, 轮数={args.epochs}, 尺寸={args.img_size}")
 
     try:
+        # 获取数据集统计信息
+        dataset_stats = get_dataset_stats(data_yaml)
+        
         # 训练模型
         model, training_results = train_model(
             data_yaml_path=data_yaml,
@@ -258,8 +338,6 @@ def main():
         # 验证模型
         metrics = validate_model(model, data_yaml)
 
-        # 获取数据集统计信息
-        dataset_stats = get_dataset_stats(data_yaml)
 
         print("\n🎉 训练流程完成!")
         print("📋 总结:")
