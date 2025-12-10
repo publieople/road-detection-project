@@ -47,12 +47,17 @@ def get_dataset_stats(data_yaml_path: str) -> dict:
                 return 0, 0
             
             # 统计图片文件
-            image_extensions = ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG']
+            image_extensions = ['.jpg', '.jpeg', '.png', '.JPG', '.JPEG', '.PNG']
             image_files = []
-            for ext in image_extensions:
-                image_files.extend(list(image_path.rglob(ext)))
             
-            total_images = len(image_files)
+            # 获取所有文件，然后按扩展名过滤
+            for file_path in image_path.rglob('*'):
+                if file_path.is_file() and file_path.suffix.lower() in ['.jpg', '.jpeg', '.png']:
+                    image_files.append(file_path)
+            
+            # 去重（按文件名）
+            unique_files = list(set(image_files))
+            total_images = len(unique_files)
             print(f"📸 找到图片文件: {total_images} 张")
             
             # 检查对应的标签路径
@@ -100,28 +105,28 @@ def get_dataset_stats(data_yaml_path: str) -> dict:
         total_images = train_images + val_images
         total_labels = train_labels + val_labels
         
-        print(f"\n📋 数据集统计总结:")
+        print(f"\n数据集统计总结:")
         print("=" * 60)
-        print(f"🚀 训练集: {train_images} 张图片, {train_labels} 个标签")
-        print(f"🔍 验证集: {val_images} 张图片, {val_labels} 个标签")
-        print(f"📊 总计: {total_images} 张图片, {total_labels} 个标签")
+        print(f"训练集: {train_images} 张图片, {train_labels} 个标签")
+        print(f"验证集: {val_images} 张图片, {val_labels} 个标签")
+        print(f"总计: {total_images} 张图片, {total_labels} 个标签")
         
         # YOLO训练时的实际使用数量（有标签的图片）
         usable_train = min(train_images, train_labels)
         usable_val = min(val_images, val_labels)
         usable_total = usable_train + usable_val
         
-        print(f"\n🎯 YOLO训练实际可用:")
+        print(f"\nYOLO训练实际可用:")
         print(f"   训练集: {usable_train} 张图片")
         print(f"   验证集: {usable_val} 张图片")
         print(f"   总计: {usable_total} 张图片")
         
         if usable_total < total_images:
-            print(f"⚠️  警告: 由于缺少标签文件，YOLO将只使用 {usable_total}/{total_images} 张图片")
+            print(f"警告: 由于缺少标签文件，YOLO将只使用 {usable_total}/{total_images} 张图片")
         
         return {
-            'train_count': usable_train,  # 实际可用的训练图片数量
-            'val_count': usable_val,      # 实际可用的验证图片数量
+            'train_count': train_labels,  # 实际有标签的训练图片数量
+            'val_count': val_labels,      # 实际有标签的验证图片数量
             'total_images': total_images, # 总图片数量
             'total_labels': total_labels, # 总标签数量
             'num_classes': nc,
@@ -238,9 +243,9 @@ def train_model(data_yaml_path: str, model_size: str = 'n', epochs: int = 100, i
         'fliplr': 0.8,                           # 左右翻转
         'flipud': 0.3,                           # 上下翻转
 
-        'mosaic': 0.8,                           # mosaic增强
-        'mixup': 0.5,                            # mixup增强
-        'copy_paste': 0.3,                       # 复制粘贴增强
+        'mosaic': 0.5,                           # 降低mosaic增强强度
+        'mixup': 0.3,                            # 减少mixup增强比例
+        'copy_paste': 0.2,                       # 降低复制粘贴增强比例
         'auto_augment': 'rand-m9-mstd0.5-inc1',  # 自动增强策略
         'erasing': 0.6,                          # 随机擦除
 
@@ -301,7 +306,7 @@ def main():
     parser.add_argument('--resume', action='store_true', help='从上次中断处恢复训练')
     parser.add_argument('--data', type=str, default='datasets/yolo_format/road.yaml', help='数据配置文件路径')
     parser.add_argument('--model-size', type=str, default='n', choices=['n', 's', 'm', 'l', 'x'], help='模型大小')
-    parser.add_argument('--epochs', type=int, default=150, help='训练轮数')
+    parser.add_argument('--epochs', type=int, default=100, help='训练轮数')
     parser.add_argument('--img-size', type=int, default=640, help='输入图像尺寸')
 
     args = parser.parse_args()
@@ -330,9 +335,9 @@ def main():
         model, training_results = train_model(
             data_yaml_path=data_yaml,
             model_size=args.model_size,
-            epochs=args.epochs,          # 训练50轮
-            img_size=args.img_size,      # 输入图像尺寸
-            resume=args.resume           # 是否恢复训练
+            epochs=args.epochs,
+            img_size=args.img_size,
+            resume=args.resume
         )
 
         # 验证模型
