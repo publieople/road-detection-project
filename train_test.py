@@ -5,7 +5,7 @@
 """
 
 import torch
-from ultralytics import YOLO
+from ultralytics import YOLO # pyright: ignore[reportPrivateImportUsage]
 from pathlib import Path
 import yaml
 import os

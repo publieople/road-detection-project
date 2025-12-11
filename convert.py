@@ -5,94 +5,40 @@ import shutil
 from typing import Dict, List, Tuple, Optional
 
 # ==================== 配置区域（按需修改） ====================
-# CRACK500数据集路径
-CRACK500_ROOT = Path("./datasets/CRACK500")
-
-# RDD2020数据集路径
-RDD2020_ROOT = Path("./datasets/RDD2020")
-
-# Road_diseases_20210513数据集路径
-ROAD_DISEASES_ROOT = Path("./datasets/Road_diseases_20210513")
+# RDD2022数据集路径（主要数据集）
+RDD2022_ROOT = Path("./datasets/RDD2022")
 
 # YOLO格式输出路径
 YOLO_ROOT = Path("./datasets/yolo_format")
 
-# RDD2020的类别映射（8类合并版本）
-RDD_CLASSES = {
+# 4类别映射
+# 0: 裂缝 (Crack) - 包含纵向裂缝、横向裂缝、轻微裂缝
+# 1: 龟裂 (Alligator Crack) - 网状裂缝
+# 2: 坑槽 (Pothole) - 坑洞
+# 3: 修补 (Repair) - 裂缝修补、坑槽修补
+FOUR_CLASSES = {
+    # 裂缝类别 - 主要包含裂缝类病害
     'D00': 0,  # 纵向裂缝 (Longitudinal Crack)
-    'D10': 1,  # 横向裂缝 (Transverse Crack)
-    'D20': 2,  # 龟裂 (Alligator Crack)
-    'D40': 3,  # 坑槽 (Pothole)
-    'D01': 4,  # 轻微纵向裂缝 (Light Longitudinal Crack)
-    'D11': 5,  # 轻微横向裂缝 (Light Transverse Crack)
-    'D43': 6,  # 其他损坏类型 (合并到other)
-    'D44': 6,  # 其他损坏类型 (合并到other)
-    'D50': 6   # 其他损坏类型 (合并到other)
-}
+    'D10': 0,  # 横向裂缝 (Transverse Crack)
+    'D01': 0,  # 轻微纵向裂缝 (Light Longitudinal Crack)
+    'D11': 0,  # 轻微横向裂缝 (Light Transverse Crack)
+    'D43': 0,  # 其他裂缝类损坏 -> 裂缝
 
-# CRACK500的类别（通常是裂缝=0）
-CRACK_CLASSES = {
-    'crack': 0
-}
+    # 龟裂类别 - 网状裂缝
+    'D20': 1,  # 龟裂 (Alligator Crack)
 
-# Road_diseases_20210513的类别映射
-ROAD_DISEASES_CLASSES = {
-    'Crack': 0,
-    'Manhole': 1,
-    'Net': 2,
-    'Pothole': 3,
-    'Patch-Crack': 4,
-    'Patch-Net': 5,
-    'Patch-Pothole': 6,
-    'other': 7,
-    'Other': 7
+    # 坑槽类别 - 仅包含真正的坑洞，排除车辙等
+    'D40': 2,  # 坑槽 (Pothole) - 需要进一步筛选
+
+    # 修补类别 - 各种修补类型
+    'Repair': 3,  # 修补（裂缝修补、坑槽修补）
+
+    # 以下类别将被舍弃（不符合4类要求）
+    'D44': -1,  # 其他损坏类型 - 舍弃
+    'D50': -1,  # 井盖 (Manhole) - 舍弃，不是道路病害
 }
 # =========================================================
 
-def parse_coco_json(json_path: Path) -> Dict[int, List[Tuple[int, float, float, float, float]]]:
-    """
-    解析COCO JSON文件，返回{image_id: [(class_id, x_center, y_center, width, height), ...]}
-    """
-    with open(json_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    
-    # 构建类别映射
-    categories = {cat['id']: cat['name'] for cat in data['categories']}
-    
-    # 构建图片信息映射
-    images = {img['id']: img for img in data['images']}
-    
-    # 构建标注映射
-    annotations = {}
-    for ann in data['annotations']:
-        image_id = ann['image_id']
-        if image_id not in annotations:
-            annotations[image_id] = []
-        
-        # 获取类别名称并映射到ID
-        category_name = categories.get(ann['category_id'], 'other')
-        class_id = ROAD_DISEASES_CLASSES.get(category_name, 7)  # 默认映射到other类别
-        
-        # 转换边界框格式 (x, y, width, height) -> (x_center, y_center, width, height)
-        x, y, width, height = ann['bbox']
-        img_width = images[image_id]['width']
-        img_height = images[image_id]['height']
-        
-        # 转换为归一化的YOLO格式
-        x_center = (x + width / 2) / img_width
-        y_center = (y + height / 2) / img_height
-        norm_width = width / img_width
-        norm_height = height / img_height
-        
-        # 确保坐标不越界
-        x_center = max(0.0, min(1.0, x_center))
-        y_center = max(0.0, min(1.0, y_center))
-        norm_width = max(0.0, min(1.0, norm_width))
-        norm_height = max(0.0, min(1.0, norm_height))
-        
-        annotations[image_id].append((class_id, x_center, y_center, norm_width, norm_height))
-    
-    return annotations
 
 def parse_xml(xml_path: Path) -> List[Tuple[int, float, float, float, float]]:
     """
@@ -127,11 +73,12 @@ def parse_xml(xml_path: Path) -> List[Tuple[int, float, float, float, float]]:
             continue
         class_name = name_elem.text
 
-        # 根据数据集选择类别映射
-        if "RDD2020" in str(xml_path):
-            class_id = RDD_CLASSES.get(class_name, -1)
-        else:
-            class_id = CRACK_CLASSES.get(class_name, -1)
+        # 使用新的4类别映射
+        class_id = FOUR_CLASSES.get(class_name, -1)
+
+        # 舍弃不符合要求的类别（class_id为-1）
+        if class_id == -1:
+            continue
 
         if class_id == -1:
             print(f"警告：XML {xml_path} 包含未知类别 {class_name}")
@@ -153,10 +100,15 @@ def parse_xml(xml_path: Path) -> List[Tuple[int, float, float, float, float]]:
             print(f"警告：XML {xml_path} 边界框信息不完整")
             continue
 
-        xmin = int(xmin_elem.text)
-        ymin = int(ymin_elem.text)
-        xmax = int(xmax_elem.text)
-        ymax = int(ymax_elem.text)
+        # 处理浮点数坐标（某些数据集使用浮点数）
+        try:
+            xmin = int(float(xmin_elem.text))
+            ymin = int(float(ymin_elem.text))
+            xmax = int(float(xmax_elem.text))
+            ymax = int(float(ymax_elem.text))
+        except ValueError:
+            print(f"警告：XML {xml_path} 边界框坐标格式错误")
+            continue
 
         # 转换为YOLO格式（中心点+宽高，归一化到0-1）
         x_center = ((xmin + xmax) / 2) / img_width
@@ -175,9 +127,10 @@ def parse_xml(xml_path: Path) -> List[Tuple[int, float, float, float, float]]:
     return boxes
 
 def convert_dataset(xml_dir: Path, img_dir: Path, yolo_dir: Path,
-                    split: str = "train", classes: Optional[Dict] = None):
+                    split: str = "train", classes: Optional[Dict] = None) -> int:
     """
     转换单个数据集
+    返回成功转换的图片数量
     """
     if classes is None:
         classes = {}
@@ -231,131 +184,130 @@ def convert_dataset(xml_dir: Path, img_dir: Path, yolo_dir: Path,
         converted_count += 1
 
     print(f"成功转换 {converted_count} 张图片")
-
-def convert_coco_dataset(json_path: Path, img_dir: Path, yolo_dir: Path, split: str = "train"):
-    """
-    转换COCO JSON格式的数据集
-    """
-    print(f"\n{'='*50}")
-    print(f"开始转换 {split} 集 (COCO格式)...")
-    print(f"JSON路径: {json_path}")
-    print(f"图片路径: {img_dir}")
-
-    # 创建YOLO目录结构
-    (yolo_dir / "images" / split).mkdir(parents=True, exist_ok=True)
-    (yolo_dir / "labels" / split).mkdir(parents=True, exist_ok=True)
-
-    # 解析COCO JSON文件
-    annotations = parse_coco_json(json_path)
-    print(f"找到 {len(annotations)} 张有标注的图片")
-
-    converted_count = 0
-    for image_id, boxes in annotations.items():
-        # 获取图片信息
-        image_filename = f"{image_id:05d}.jpg"  # 格式化为5位数字文件名
-        
-        # 查找对应的图片文件
-        img_path = img_dir / image_filename
-        if not img_path.exists():
-            print(f"警告：未找到图片文件 {img_path}")
-            continue
-
-        if len(boxes) == 0:
-            print(f"跳过 {image_filename}: 无有效标注")
-            continue
-
-        # 复制图片到YOLO目录
-        dst_img = yolo_dir / "images" / split / img_path.name
-        shutil.copy2(img_path, dst_img)
-
-        # 创建YOLO格式的txt标注文件
-        txt_path = yolo_dir / "labels" / split / (img_path.stem + ".txt")
-        with open(txt_path, 'w') as f:
-            for box in boxes:
-                line = f"{box[0]} {box[1]} {box[2]} {box[3]} {box[4]}\n"
-                f.write(line)
-
-        converted_count += 1
-
-    print(f"成功转换 {converted_count} 张图片")
     return converted_count
 
-def main():
+
+def convert_rdd2022_dataset():
     """
-    主函数：转换所有数据集
+    转换RDD2022数据集，支持所有国家数据
     """
-    YOLO_ROOT.mkdir(parents=True, exist_ok=True)
+    if not RDD2022_ROOT.exists():
+        print(f"❌ RDD2022路径不存在: {RDD2022_ROOT}")
+        return 0
 
-    # 1. 转换CRACK500数据集
-    if CRACK500_ROOT.exists():
-        print("\n正在转换 CRACK500 数据集...")
+    print(f"\n{'='*60}")
+    print("🚀 开始转换 RDD2022 数据集...")
+    print(f"数据集路径: {RDD2022_ROOT}")
 
-        # 转换train集
-        convert_dataset(
-            xml_dir=CRACK500_ROOT / "Annotations" / "train",
-            img_dir=CRACK500_ROOT / "JPEGImages" / "train",
-            yolo_dir=YOLO_ROOT,
-            split="train",
-            classes=CRACK_CLASSES
-        )
+    # 定义所有国家文件夹
+    countries = ["China_Drone", "China_MotorBike", "Czech", "India", "Japan", "Norway", "United_States"]
 
-        # 转换val集
-        convert_dataset(
-            xml_dir=CRACK500_ROOT / "Annotations" / "val",
-            img_dir=CRACK500_ROOT / "JPEGImages" / "val",
-            yolo_dir=YOLO_ROOT,
-            split="val",
-            classes=CRACK_CLASSES
-        )
-    else:
-        print(f"警告：CRACK500路径不存在 {CRACK500_ROOT}")
+    total_converted = 0
 
-    # 2. 转换RDD2020数据集
-    if RDD2020_ROOT.exists():
-        print("\n正在转换 RDD2020 数据集...")
+    for country in countries:
+        print(f"\n📍 处理 {country} 数据...")
 
-        # 遍历所有国家文件夹
-        for country in ["Czech", "India", "Japan"]:
-            country_xml_dir = RDD2020_ROOT / "train" / country / "annotations" / "xmls"
-            country_img_dir = RDD2020_ROOT / "train" / country / "images"
+        # 检查训练集
+        train_xml_dir = RDD2022_ROOT / country / "train" / "annotations" / "xmls"
+        train_img_dir = RDD2022_ROOT / country / "train" / "images"
 
-            if country_xml_dir.exists():
-                # 所有国家数据合并到train集
-                convert_dataset(
-                    xml_dir=country_xml_dir,
-                    img_dir=country_img_dir,
-                    yolo_dir=YOLO_ROOT,
-                    split="train",
-                    classes=RDD_CLASSES
-                )
-    else:
-        print(f"警告：RDD2020路径不存在 {RDD2020_ROOT}")
-
-    # 3. 转换Road_diseases_20210513数据集
-    if ROAD_DISEASES_ROOT.exists():
-        print("\n正在转换 Road_diseases_20210513 数据集...")
-        
-        # COCO JSON标注文件路径
-        json_path = ROAD_DISEASES_ROOT / "train" / "train" / "annotations" / "train.json"
-        img_dir = ROAD_DISEASES_ROOT / "train" / "train" / "images"
-        
-        if json_path.exists() and img_dir.exists():
-            convert_coco_dataset(
-                json_path=json_path,
-                img_dir=img_dir,
+        if train_xml_dir.exists() and train_img_dir.exists():
+            print(f"  找到训练集: {len(list(train_xml_dir.glob('*.xml')))} 个标注文件")
+            converted = convert_dataset(
+                xml_dir=train_xml_dir,
+                img_dir=train_img_dir,
                 yolo_dir=YOLO_ROOT,
                 split="train"
             )
+            total_converted += converted
+            print(f"  ✅ {country} 训练集转换完成: {converted} 张图片")
         else:
-            print(f"警告：Road_diseases_20210513数据不完整，JSON: {json_path.exists()}, 图片: {img_dir.exists()}")
-    else:
-        print(f"警告：Road_diseases_20210513路径不存在 {ROAD_DISEASES_ROOT}")
+            print(f"  ⚠️  {country} 训练集路径不存在")
 
-    print(f"\n{'='*50}")
-    print(f"转换完成！YOLO格式数据保存在: {YOLO_ROOT}")
+        # 检查测试集（如果有的话，用作验证集）
+        test_xml_dir = RDD2022_ROOT / country / "test" / "annotations" / "xmls"
+        test_img_dir = RDD2022_ROOT / country / "test" / "images"
+
+        if test_xml_dir.exists() and test_img_dir.exists():
+            print(f"  找到测试集: {len(list(test_xml_dir.glob('*.xml')))} 个标注文件")
+            converted = convert_dataset(
+                xml_dir=test_xml_dir,
+                img_dir=test_img_dir,
+                yolo_dir=YOLO_ROOT,
+                split="val"
+            )
+            total_converted += converted
+            print(f"  ✅ {country} 测试集转换完成: {converted} 张图片")
+
+    return total_converted
+
+def analyze_class_distribution(yolo_dir: Path):
+    """
+    分析类别分布情况
+    """
+    print(f"\n{'='*60}")
+    print("📊 分析类别分布...")
+
+    class_counts = {0: 0, 1: 0, 2: 0, 3: 0}
+    class_names = ['裂缝', '龟裂', '坑槽', '修补']
+
+    # 统计训练集
+    train_label_dir = yolo_dir / "labels" / "train"
+    if train_label_dir.exists():
+        for txt_file in train_label_dir.glob("*.txt"):
+            with open(txt_file, 'r') as f:
+                for line in f:
+                    class_id = int(line.strip().split()[0])
+                    if class_id in class_counts:
+                        class_counts[class_id] += 1
+
+    # 统计验证集
+    val_label_dir = yolo_dir / "labels" / "val"
+    if val_label_dir.exists():
+        for txt_file in val_label_dir.glob("*.txt"):
+            with open(txt_file, 'r') as f:
+                for line in f:
+                    class_id = int(line.strip().split()[0])
+                    if class_id in class_counts:
+                        class_counts[class_id] += 1
+
+    print("类别分布统计:")
+    total_instances = sum(class_counts.values())
+    for class_id, count in class_counts.items():
+        percentage = (count / total_instances * 100) if total_instances > 0 else 0
+        print(f"  {class_names[class_id]} (类别{class_id}): {count} 个实例 ({percentage:.1f}%)")
+
+    return class_counts
+
+def main():
+    """
+    主函数：转换RDD2022数据集为4类别YOLO格式
+    """
+    print("🛣️  RDD2022 道路病害数据集转换工具")
+    print("=" * 60)
+    print("📋 功能: 将RDD2022数据集转换为4类别YOLO格式")
+    print("🏷️  类别: 裂缝(0), 龟裂(1), 坑槽(2), 修补(3)")
+    print("=" * 60)
+
+    YOLO_ROOT.mkdir(parents=True, exist_ok=True)
+
+    # 转换RDD2022数据集
+    total_converted = convert_rdd2022_dataset()
+
+    if total_converted == 0:
+        print("❌ 没有成功转换任何数据，请检查数据集路径")
+        return
+
+    print(f"\n{'='*60}")
+    print(f"✅ 转换完成！总计转换了 {total_converted} 张图片")
+    print(f"📁 YOLO格式数据保存在: {YOLO_ROOT}")
+
+    # 分析类别分布
+    class_counts = analyze_class_distribution(YOLO_ROOT)
 
     # 打印最终结构
-    print("\n数据分布统计:")
+    print(f"\n{'='*60}")
+    print("数据分布统计:")
     for split in ['train', 'val']:
         img_dir = YOLO_ROOT / "images" / split
         if img_dir.exists():
@@ -363,37 +315,58 @@ def main():
             print(f"  {split}集: {img_count} 张图片")
 
     # 生成数据配置文件
-    print("\n生成 road.yaml 配置文件...")
-    
-    # 检查是否有Road_diseases_20210513数据集，如果有则使用新的类别配置
-    if ROAD_DISEASES_ROOT.exists() and (ROAD_DISEASES_ROOT / "train" / "train" / "annotations" / "train.json").exists():
-        # 使用Road_diseases_20210513的8类别配置
-        config_content = f"""
+    print(f"\n{'='*60}")
+    print("📝 生成 road.yaml 配置文件...")
+
+    config_content = f"""# RDD2022 道路病害检测数据集配置
+# 4类别：裂缝、龟裂、坑槽、修补
 path: {YOLO_ROOT.as_posix()}
 train: images/train
 val: images/val
 
-nc: 8
-names: ['Crack', 'Manhole', 'Net', 'Pothole', 'Patch-Crack', 'Patch-Net', 'Patch-Pothole', 'other']
+# 类别数量
+nc: 4
 
+# 类别名称
+names: ['裂缝', '龟裂', '坑槽', '修补']
+
+# 数据增强配置（针对道路病害优化）
+mosaic: 0.8          # Mosaic增强强度
+mixup: 0.5           # MixUp增强比例
+copy_paste: 0.3      # 复制粘贴增强比例
+degrees: 15.0        # 旋转增强角度
+translate: 0.3       # 平移增强比例
+scale: 0.7           # 缩放增强比例
+shear: 5.0           # 剪切增强角度
+perspective: 0.001   # 透视增强比例
+fliplr: 0.8          # 左右翻转概率
+flipud: 0.2          # 上下翻转概率
+hsv_h: 0.015         # HSV色调增强
+hsv_s: 0.7           # HSV饱和度增强
+hsv_v: 0.4           # HSV明度增强
 """
-    else:
-        # 使用原有的9类别配置
-        config_content = f"""
-path: {YOLO_ROOT.as_posix()}
-train: images/train
-val: images/val
 
-nc: 9
-names: ['longitudinal_crack', 'transverse_crack', 'alligator_crack', 'pothole', 'light_longitudinal_crack', 'light_transverse_crack', 'other_damage_1', 'other_damage_2', 'other_damage_3']
-
-"""
-    
-    with open(YOLO_ROOT / "road.yaml", 'w') as f:
+    with open(YOLO_ROOT / "road.yaml", 'w', encoding='utf-8') as f:
         f.write(config_content)
 
-    print(f"配置文件已生成: {YOLO_ROOT / 'road.yaml'}")
-    print(f"可直接用于训练的YAML路径: {YOLO_ROOT.resolve() / 'road.yaml'}")
+    print(f"✅ 配置文件已生成: {YOLO_ROOT / 'road.yaml'}")
+    print(f"🎯 可直接用于训练的YAML路径: {YOLO_ROOT.resolve() / 'road.yaml'}")
+
+    # 输出类别分布建议
+    print(f"\n{'='*60}")
+    print("💡 训练建议:")
+    if class_counts:
+        max_count = max(class_counts.values())
+        min_count = min(class_counts.values())
+        imbalance_ratio = max_count / min_count if min_count > 0 else float('inf')
+
+        if imbalance_ratio > 3:
+            print(f"⚠️  检测到类别不平衡 (比例: {imbalance_ratio:.1f}:1)")
+            print("   建议: 使用类别加权损失函数或过采样策略")
+        else:
+            print("✅ 类别分布相对均衡")
+
+    print("\n🎉 数据转换完成！可以开始训练模型了。")
 
 if __name__ == '__main__':
     main()
