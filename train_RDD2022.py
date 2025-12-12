@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 道路病害检测模型训练脚本
 专门针对4类别不平衡问题和高准确率需求
 """
 
-from matplotlib.pylab import f
 import torch
 from ultralytics import YOLO # pyright: ignore[reportPrivateImportUsage]
 from pathlib import Path
@@ -12,6 +12,35 @@ import yaml
 import os
 import numpy as np
 from collections import Counter
+import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
+from typing import Optional
+
+# 配置matplotlib中文字体支持
+try:
+    # Windows系统常见中文字体
+    font_paths = [
+        "C:/Windows/Fonts/simhei.ttf",  # 黑体
+        "C:/Windows/Fonts/simsun.ttc",  # 宋体
+        "C:/Windows/Fonts/msyh.ttc",    # 微软雅黑
+    ]
+
+    # 查找可用的中文字体
+    available_fonts = []
+    for font_path in font_paths:
+        if Path(font_path).exists():
+            available_fonts.append(font_path)
+
+    if available_fonts:
+        primary_font = available_fonts[0]
+        font_name = Path(primary_font).stem
+        plt.rcParams['font.family'] = 'sans-serif'
+        plt.rcParams['font.sans-serif'] = [font_name, 'DejaVu Sans']
+        plt.rcParams['axes.unicode_minus'] = False
+        fm.fontManager.addfont(primary_font)
+
+except Exception as e:
+    print("中文字体配置失败: {}".format(e))
 
 def analyze_dataset_labels(data_yaml_path: str) -> dict:
     """
@@ -69,21 +98,29 @@ def analyze_dataset_labels(data_yaml_path: str) -> dict:
 
 def setup_training():
     """配置训练环境和参数"""
+
     # 检查GPU可用性
     if torch.cuda.is_available():
-        print(f"✅ GPU可用: {torch.cuda.get_device_name(0)}")
-        print(f"🔥 CUDA版本: {torch.version.cuda}")
+        print("GPU可用: {}".format(torch.cuda.get_device_name(0)))
+        print("CUDA版本: {}".format(torch.version.cuda))
         device = 'cuda'
     else:
-        print("⚠️  GPU不可用，使用CPU训练")
+        print("GPU不可用，使用CPU训练")
         device = 'cpu'
 
     return device
 
 def train_optimized_model(data_yaml_path: str, model_size: str = 's', epochs: int = 150,
-                         img_size: int = 640, resume: bool = False):
+                         img_size: int = 640, resume_path: Optional[str] = None):
     """
     训练YOLO模型，专门针对道路病害检测
+
+    Args:
+        data_yaml_path: 数据配置文件路径
+        model_size: 模型大小 ('n', 's', 'm', 'l', 'x')
+        epochs: 训练轮数
+        img_size: 输入图像尺寸
+        resume_path: 恢复训练的权重文件路径，如果为None则开始新训练
     """
     device = setup_training()
 
@@ -91,29 +128,17 @@ def train_optimized_model(data_yaml_path: str, model_size: str = 's', epochs: in
     dataset_stats = analyze_dataset_labels(data_yaml_path)
     class_weights = dataset_stats['class_weights']
 
-    if resume:
-        print("🔄 检测是否存在中断的训练，尝试恢复...")
-        possible_weights = [
-            'runs/detect/train/weights/last.pt',
-            'runs/detect/train2/weights/last.pt',
-            'runs/detect/train3/weights/last.pt',
-        ]
-
-        resume_path = None
-        for weight_path in possible_weights:
-            if Path(weight_path).exists():
-                resume_path = weight_path
-                break
-
-        if resume_path:
-            print(f"✅ 找到中断的训练权重: {resume_path}")
-            model = YOLO(resume_path)
-            print("🚀 从上次中断处继续训练...")
-        else:
-            print("⚠️  未找到可恢复的权重文件，开始新的训练...")
+    if resume_path:
+        if not Path(resume_path).exists():
+            print(f"❌ 指定的权重文件不存在: {resume_path}")
+            print("⚠️  开始新的训练...")
             model_name = f'yolo11{model_size}.pt'
             print(f"📦 加载预训练模型: {model_name}")
             model = YOLO(model_name)
+        else:
+            print(f"🔄 从指定权重恢复训练: {resume_path}")
+            model = YOLO(resume_path)
+            print("🚀 继续训练...")
     else:
         model_name = f'yolo11{model_size}.pt'
         print(f"📦 加载预训练模型: {model_name}")
@@ -131,30 +156,30 @@ def train_optimized_model(data_yaml_path: str, model_size: str = 's', epochs: in
 
         # 优化器配置
         'optimizer': 'AdamW',  # 使用AdamW优化器
-        'lr0': 0.001,  # 初始学习率
-        'lrf': 0.01,  # 最终学习率倍数
-        'momentum': 0.937,
-        'weight_decay': 0.0005,
+        'lr0': 0.002,  # 初始学习率
+        'lrf': 0.05,  # 最终学习率倍数
+        'momentum': 0.95,
+        'weight_decay': 0.0001, # 权重衰减
 
         # 学习率调度
-        'warmup_epochs': 10,  # 增加预热轮数
+        'warmup_epochs': 3,  # 预热轮数
         'warmup_momentum': 0.8,
         'cos_lr': True,  # 使用余弦退火学习率
 
         # 损失函数配置（针对类别不平衡）
-        'box': 7.5,  # box loss增益
-        'cls': 1.5,  # 增加cls loss增益（原0.5）
-        'dfl': 1.5,  # dfl loss增益
+        'box': 9.0,  # box loss增益，提升定位精度
+        'cls': 3.0,  # cls loss增益，增强分类效果
+        'dfl': 2.5,  # dfl loss增益
 
-        # 数据增强（针对道路病害优化）
+        # 数据增强
         'hsv_h': 0.015,  # HSV色调增强
         'hsv_s': 0.7,  # HSV饱和度增强
         'hsv_v': 0.4,  # HSV明度增强
 
         # 几何增强
         'degrees': 15.0,  # 旋转增强
-        'translate': 0.3,  # 平移增强
-        'scale': 0.7,  # 缩放增强
+        'translate': 0.4,  # 平移增强
+        'scale': 0.9,  # 缩放增强
         'shear': 5.0,  # 剪切增强
         'perspective': 0.001,  # 透视增强
         'fliplr': 0.8,  # 左右翻转
@@ -163,13 +188,13 @@ def train_optimized_model(data_yaml_path: str, model_size: str = 's', epochs: in
         # 高级增强
         'mosaic': 0.8,  # Mosaic增强
         'mixup': 0.3,  # MixUp增强
-        'copy_paste': 0.2,  # 复制粘贴增强
+        'copy_paste': 0.4,  # 复制粘贴增强
         'auto_augment': 'rand-m9-mstd0.5-inc1',  # 自动增强
         'erasing': 0.4,  # 随机擦除
 
         # 训练策略
         'close_mosaic': 20,  # 后期关闭Mosaic
-        'patience': 30,  # 早停耐心值
+        'patience': 15,  # 早停耐心值
         'single_cls': False,  # 多类别检测
 
         # 性能优化
@@ -182,6 +207,10 @@ def train_optimized_model(data_yaml_path: str, model_size: str = 's', epochs: in
         'save': True,
         'save_period': 10,  # 每10轮保存一次
         'plots': True,  # 生成图表
+
+        # 保存路径配置 - 确保保存到当前目录
+        'project': './runs',                     # 项目目录
+        'name': 'detect',                        # 实验名称
     }
 
     print("🚀 开始训练...")
@@ -191,7 +220,7 @@ def train_optimized_model(data_yaml_path: str, model_size: str = 's', epochs: in
     print(f"📦 模型大小: {model_size}")
 
     # 开始训练
-    if resume and resume_path:
+    if resume_path and Path(resume_path).exists():
         training_config['resume'] = True
         results = model.train(**training_config)
     else:
@@ -231,7 +260,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description='道路病害检测模型训练')
-    parser.add_argument('--resume', action='store_true', help='从上次中断处恢复训练')
+    parser.add_argument('--resume', type=str, help='从指定权重文件恢复训练路径')
     parser.add_argument('--data', type=str, default='datasets/yolo_format/road.yaml', help='数据配置文件路径')
     parser.add_argument('--model-size', type=str, default='s', choices=['n', 's', 'm', 'l', 'x'], help='模型大小')
     parser.add_argument('--epochs', type=int, default=150, help='训练轮数')
@@ -251,7 +280,7 @@ def main():
     print("=" * 60)
 
     if args.resume:
-        print("🔄 已启用训练恢复模式")
+        print(f"🔄 已启用训练恢复模式，权重文件: {args.resume}")
 
     print(f"📊 配置: 模型={args.model_size}, 轮数={args.epochs}, 尺寸={args.img_size}")
 
@@ -262,7 +291,7 @@ def main():
             model_size=args.model_size,
             epochs=args.epochs,
             img_size=args.img_size,
-            resume=args.resume
+            resume_path=args.resume
         )
 
         # 验证模型

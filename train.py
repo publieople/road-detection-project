@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 道路病害检测模型训练脚本
 基于yolo11训练专门的道路病害检测模型
@@ -9,6 +10,37 @@ from ultralytics import YOLO # pyright: ignore[reportPrivateImportUsage]
 from pathlib import Path
 import yaml
 import os
+import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
+import platform
+
+# 配置matplotlib中文字体支持
+try:
+    # Windows系统常见中文字体
+    font_paths = [
+        "C:/Windows/Fonts/simhei.ttf",  # 黑体
+        "C:/Windows/Fonts/simsun.ttc",  # 宋体
+        "C:/Windows/Fonts/msyh.ttc",    # 微软雅黑
+    ]
+
+    # 查找可用的中文字体
+    available_fonts = []
+    for font_path in font_paths:
+        if Path(font_path).exists():
+            available_fonts.append(font_path)
+
+    if available_fonts:
+        primary_font = available_fonts[0]
+        font_name = Path(primary_font).stem
+        plt.rcParams['font.family'] = 'sans-serif'
+        plt.rcParams['font.sans-serif'] = [font_name, 'DejaVu Sans']
+        plt.rcParams['axes.unicode_minus'] = False
+        fm.fontManager.addfont(primary_font)
+        print("中文字体配置成功: {}".format(font_name))
+    else:
+        print("未找到中文字体，图表中的中文可能显示为方块")
+except Exception as e:
+    print("中文字体配置失败: {}".format(e))
 
 def get_dataset_stats(data_yaml_path: str) -> dict:
     """从数据配置文件中获取统计信息"""
@@ -151,11 +183,11 @@ def setup_training():
 
     # 检查GPU可用性
     if torch.cuda.is_available():
-        print(f"✅ GPU可用: {torch.cuda.get_device_name(0)}")
-        print(f"🔥 CUDA版本: {torch.version.cuda}")
+        print("GPU可用: {}".format(torch.cuda.get_device_name(0)))
+        print("CUDA版本: {}".format(torch.version.cuda))
         device = 'cuda'
     else:
-        print("⚠️  GPU不可用，使用CPU训练")
+        print("GPU不可用，使用CPU训练")
         device = 'cpu'
 
     return device
@@ -257,6 +289,10 @@ def train_model(data_yaml_path: str, model_size: str = 'n', epochs: int = 100, i
         'single_cls': False,                     # 是否为单类别检测
         'patience': 50,                          # 早停耐心值
         'cos_lr': True,                          # 使用余弦退火学习率
+
+        # 保存路径配置 - 确保保存到当前目录
+        'project': './runs',                     # 项目目录
+        'name': 'detect',                        # 实验名称
     }
 
     print("🚀 开始训练模型...")
