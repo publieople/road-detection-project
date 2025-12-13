@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 从训练集中分割出验证集
-用于解决RDD2022数据集缺少验证集的问题
 """
 
 import os
@@ -13,7 +12,7 @@ import yaml
 def split_train_val(train_dir: Path, val_dir: Path, dataset_root: Path, split_ratio: float = 0.2, seed: int = 42):
     """
     从训练集中分割出验证集
-    
+
     Args:
         train_dir: 训练集目录路径
         val_dir: 验证集目录路径
@@ -82,7 +81,7 @@ def main():
     """
     主函数：分割验证集
     """
-    print("🔀 RDD2022 验证集分割工具")
+    print("🔀 验证集分割工具")
     print("=" * 50)
 
     # 数据集路径
