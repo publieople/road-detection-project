@@ -10,6 +10,10 @@ from ultralytics import YOLO
 from pathlib import Path
 from typing import Optional, Dict, Any, Literal
 import torch
+import os
+
+# 修复 Windows 上 torch._dynamo 的路径问题
+os.environ['TORCH_DISABLE_DYNAMO'] = '1'
 
 class RoadDamageModel:
     """道路病害检测模型管理类

@@ -7,7 +7,11 @@
 
 import argparse
 import sys
+import os
 from pathlib import Path
+
+# 修复 Windows 上 torch._dynamo 的路径问题
+os.environ['TORCH_DISABLE_DYNAMO'] = '1'
 
 # 添加模块路径
 sys.path.append(str(Path(__file__).parent))
