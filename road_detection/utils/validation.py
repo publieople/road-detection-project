@@ -157,7 +157,26 @@ class ModelValidator:
 
         try:
             # 执行验证（Windows上禁用多进程workers避免崩溃）
-            metrics = self.model.val(data=self.data_yaml_path, workers=0)
+            # 如果指定了保存目录，需要将其分解为project和name
+            val_kwargs = {
+                'data': self.data_yaml_path,
+                'workers': 0,
+                'exist_ok': True  # 允许覆盖现有结果
+            }
+
+            if save_dir:
+                # 将保存目录分解为project和name
+                save_path = Path(save_dir)
+                # 如果save_dir是绝对路径，提取其父目录作为project，最后一个目录作为name
+                if save_path.is_absolute():
+                    val_kwargs['project'] = str(save_path.parent)
+                    val_kwargs['name'] = save_path.name
+                else:
+                    # 相对路径的情况
+                    val_kwargs['project'] = str(save_path.parent) if save_path.parent != Path('.') else '.'
+                    val_kwargs['name'] = save_path.name
+
+            metrics = self.model.val(**val_kwargs)
 
             # 获取类别信息
             with open(self.data_yaml_path, 'r', encoding='utf-8') as f:

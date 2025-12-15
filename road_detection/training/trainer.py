@@ -153,7 +153,7 @@ class RoadDamageTrainer:
         验证模型
 
         Args:
-            save_dir: 结果保存目录
+            save_dir: 结果保存目录（如果为None，则使用训练结果的保存目录）
 
         Returns:
             验证结果
@@ -166,6 +166,14 @@ class RoadDamageTrainer:
             raise ValueError("模型未初始化，请先训练模型")
 
         try:
+            # 如果未指定保存目录，则从训练结果中获取
+            if save_dir is None and self.training_results is not None:
+                # 从YOLO训练结果中获取保存目录
+                if hasattr(self.training_results, 'save_dir'):
+                    save_dir = str(self.training_results.save_dir)
+                elif hasattr(self.model.model, 'trainer') and hasattr(self.model.model.trainer, 'save_dir'):
+                    save_dir = str(self.model.model.trainer.save_dir)
+
             # 创建验证器
             validator = ModelValidator(
                 model_path=self.model.model.ckpt_path,  # 获取当前模型路径
