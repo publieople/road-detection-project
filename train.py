@@ -108,6 +108,8 @@ def main():
                        help='详细分析数据集')
     parser.add_argument('--generate-report', action='store_true',
                        help='生成详细训练报告')
+    parser.add_argument('--skip-validation', action='store_true',
+                       help='跳过训练完成后的自动验证 (默认: 启用验证)')
 
     args = parser.parse_args()
 
@@ -195,8 +197,12 @@ def main():
         # 训练
         model, training_results = trainer.train(resume=args.resume)
 
-        # 验证
-        validation_results = trainer.validate(save_dir=args.save_dir)
+        # 验证（如果未跳过）
+        if not args.skip_validation:
+            validation_results = trainer.validate(save_dir=args.save_dir)
+        else:
+            print("\n🏃 跳过验证阶段（--skip-validation 已启用）")
+            validation_results = None
 
         # 导出模型
         if not args.no_export:
@@ -205,11 +211,14 @@ def main():
 
         # 生成报告
         if args.generate_report:
-            if args.save_dir:
-                report_path = Path(args.save_dir) / "training_report.txt"
+            if validation_results:
+                if args.save_dir:
+                    report_path = Path(args.save_dir) / "training_report.txt"
+                else:
+                    report_path = "training_report.txt"
+                trainer.save_training_report(str(report_path))
             else:
-                report_path = "training_report.txt"
-            trainer.save_training_report(str(report_path))
+                print("⚠️  跳过报告生成（需要完整的验证结果）")
 
         # 打印总结
         print("\n" + "=" * 80)
@@ -220,20 +229,19 @@ def main():
         print(f"   验证图片: {dataset_stats['val_count']} 张")
         print(f"   类别数量: {dataset_stats['num_classes']}")
         print(f"   类别名称: {', '.join(dataset_stats['class_names'])}")
-        print(f"\n🎯 验证结果:")
-        print(f"   mAP@0.5: {validation_results['mAP50']:.3f}")
-        print(f"   mAP@0.5:0.95: {validation_results['mAP5095']:.3f}")
 
-        # 检查目标达成
-        if validation_results['mAP50'] >= args.target_map50:
-            print(f"✅ 目标达成！模型准确率 ≥ {args.target_map50:.0%}")
+        if validation_results:
+            print(f"\n🎯 验证结果:")
+            print(f"   mAP@0.5: {validation_results['mAP50']:.3f}")
+            print(f"   mAP@0.5:0.95: {validation_results['mAP5095']:.3f}")
+
+            # 检查目标达成
+            if validation_results['mAP50'] >= args.target_map50:
+                print(f"✅ 目标达成！模型准确率 ≥ {args.target_map50:.0%}")
+            else:
+                print(f"⚠️  未达目标。当前准确率: {validation_results['mAP50']:.1%}, 目标: {args.target_map50:.0%}")
         else:
-            print(f"⚠️  未达目标。当前准确率: {validation_results['mAP50']:.1%}, 目标: {args.target_map50:.0%}")
-
-        print("\n💡 提示:")
-        print("   - 使用 analyze_training_results.py 分析训练历史")
-        print("   - 使用 model_optimization.py 进行模型优化")
-        print("   - 使用 detect.py 进行模型推理测试")
+            print(f"\n⏭️  已跳过验证阶段")
 
         return 0
 

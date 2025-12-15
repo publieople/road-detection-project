@@ -166,17 +166,40 @@ class RoadDamageTrainer:
             raise ValueError("模型未初始化，请先训练模型")
 
         try:
+            # 获取最新训练模型的路径
+            model_path = None
+
+            if self.training_results is not None:
+                # 优先从训练结果中获取最新模型路径
+                if hasattr(self.training_results, 'save_dir'):
+                    save_dir_path = Path(self.training_results.save_dir)
+                    best_pt = save_dir_path / 'weights' / 'best.pt'
+                    if best_pt.exists():
+                        model_path = str(best_pt)
+                        print(f"📂 使用训练结果中的最佳模型: {model_path}")
+                    else:
+                        last_pt = save_dir_path / 'weights' / 'last.pt'
+                        if last_pt.exists():
+                            model_path = str(last_pt)
+                            print(f"📂 使用训练结果中的最后模型: {model_path}")
+
             # 如果未指定保存目录，则从训练结果中获取
             if save_dir is None and self.training_results is not None:
                 # 从YOLO训练结果中获取保存目录
                 if hasattr(self.training_results, 'save_dir'):
                     save_dir = str(self.training_results.save_dir)
-                elif hasattr(self.model.model, 'trainer') and hasattr(self.model.model.trainer, 'save_dir'):
-                    save_dir = str(self.model.model.trainer.save_dir)
+
+            # 如果还没有找到模型路径，使用当前模型的路径
+            if model_path is None:
+                if hasattr(self.model.model, 'ckpt_path') and self.model.model.ckpt_path:
+                    model_path = self.model.model.ckpt_path
+                else:
+                    raise ValueError("无法找到有效的模型路径")
+                print(f"📂 使用当前加载的模型: {model_path}")
 
             # 创建验证器
             validator = ModelValidator(
-                model_path=self.model.model.ckpt_path,  # 获取当前模型路径
+                model_path=model_path,
                 data_yaml_path=self.config.data_yaml_path
             )
 
