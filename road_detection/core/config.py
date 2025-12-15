@@ -12,7 +12,7 @@ from pathlib import Path
 @dataclass
 class TrainingConfig:
     """训练配置类"""
-    
+
     # 基础配置
     data_yaml_path: str = "datasets/yolo_format/road.yaml"
     model_size: str = "n"  # n, s, m, l, x
@@ -20,11 +20,11 @@ class TrainingConfig:
     img_size: int = 640
     batch_size: int = 16
     workers: int = 4
-    
+
     # 设备配置
     device: str = "auto"  # auto, cuda, cpu
     amp: bool = True  # 混合精度训练
-    
+
     # 优化器配置
     optimizer: str = "SGD"  # SGD, AdamW
     lr0: float = 0.001  # 初始学习率
@@ -32,12 +32,12 @@ class TrainingConfig:
     momentum: float = 0.9
     weight_decay: float = 0.0005
     warmup_epochs: int = 5
-    
+
     # 损失函数配置
     box_gain: float = 7.5
     cls_gain: float = 0.5
     dfl_gain: float = 1.5
-    
+
     # 数据增强配置
     hsv_h: float = 0.015
     hsv_s: float = 0.7
@@ -54,22 +54,22 @@ class TrainingConfig:
     copy_paste: float = 0.2
     auto_augment: str = "rand-m9-mstd0.5-inc1"
     erasing: float = 0.6
-    
+
     # 训练策略
     close_mosaic: int = 10
     patience: int = 50
     cos_lr: bool = True
-    
+
     # 保存配置
     project: str = "./runs"
     name: str = "detect"
     save_period: int = 10
-    
+
     # 高级配置
     single_cls: bool = False
     overlap_mask: bool = False
     cache: bool = False
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典格式"""
         return {
@@ -117,7 +117,7 @@ class TrainingConfig:
             'save': True,
             'plots': True
         }
-    
+
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> 'TrainingConfig':
         """从字典创建配置"""
@@ -126,13 +126,13 @@ class TrainingConfig:
             if hasattr(config, key):
                 setattr(config, key, value)
         return config
-    
+
     def save_to_yaml(self, yaml_path: str):
         """保存为YAML文件"""
         import yaml
         with open(yaml_path, 'w', encoding='utf-8') as f:
             yaml.dump(self.to_dict(), f, allow_unicode=True, sort_keys=False)
-    
+
     @classmethod
     def load_from_yaml(cls, yaml_path: str) -> 'TrainingConfig':
         """从YAML文件加载配置"""
@@ -143,25 +143,25 @@ class TrainingConfig:
 
 class OptimizedTrainingConfig(TrainingConfig):
     """优化的训练配置（针对RDD2022数据集）"""
-    
+
     def __init__(self):
         super().__init__()
         # 覆盖为优化配置
         self.model_size = "s"
         self.epochs = 150
-        self.optimizer = "AdamW"
+        self.optimizer = "SGD"
         self.lr0 = 0.002
         self.lrf = 0.05
         self.momentum = 0.95
         self.weight_decay = 0.0001
         self.warmup_epochs = 3
         self.patience = 15
-        
+
         # 增强的损失函数配置
         self.box_gain = 9.0
         self.cls_gain = 3.0
         self.dfl_gain = 2.5
-        
+
         # 更强的数据增强
         self.degrees = 15.0
         self.translate = 0.4
